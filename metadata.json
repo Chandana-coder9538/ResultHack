@@ -1,0 +1,8 @@
+{
+  "name": "Remix Remix BDT Semester Marks Analyzer",
+  "description": "Full-stack semester marks analysis dashboard with Excel ingestion, score distribution charts, faculty mapping, rank lists, failed student tracking, and consolidated reports.",
+  "requestFramePermissions": [],
+  "majorCapabilities": [
+    "MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"
+  ]
+}

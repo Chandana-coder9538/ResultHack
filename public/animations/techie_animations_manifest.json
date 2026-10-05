@@ -1,0 +1,14 @@
+{
+  "v": "5.5.7",
+  "fr": 60,
+  "ip": 0,
+  "op": 120,
+  "w": 500,
+  "h": 500,
+  "nm": "Techie Animations Collection Placeholder",
+  "meta": {
+    "author": "MarksAnalyzer Techie Visual Rig",
+    "description": "Replace these files with your custom Lottie JSON or Rive runtime files anytime. The internal SVG/CSS character rig provides 100% vector fidelity out of the box."
+  },
+  "layers": []
+}
