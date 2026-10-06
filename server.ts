@@ -2578,12 +2578,13 @@ async function startServer() {
         } catch {}
       }
 
-      // Ensure semester details carries authenticated college and department name
+      // Ensure semester details strictly carries authenticated college and concerned department name
       if (userSemesterDetails) {
-        if (!userSemesterDetails.department && deptUser?.departmentName) {
+        if (deptUser?.departmentName) {
           userSemesterDetails.department = deptUser.departmentName;
+          userSemesterDetails.branch = deptUser.departmentName;
         }
-        if (!userSemesterDetails.college && deptUser?.collegeName) {
+        if (deptUser?.collegeName) {
           userSemesterDetails.college = deptUser.collegeName;
         }
       }
@@ -2755,6 +2756,15 @@ async function startServer() {
       const newGradingBands: GradingBandConfig = gradingBands || session.config.gradingBands;
       const newSubjectsConfig: Record<string, SubjectConfig> = subjectsConfig || session.config.subjectsConfig;
       const newSemesterDetails = semesterDetails !== undefined ? semesterDetails : (session.config as any)?.semesterDetails;
+      if (newSemesterDetails) {
+        if (deptUser?.departmentName) {
+          newSemesterDetails.department = deptUser.departmentName;
+          newSemesterDetails.branch = deptUser.departmentName;
+        }
+        if (deptUser?.collegeName) {
+          newSemesterDetails.college = deptUser.collegeName;
+        }
+      }
 
       const updatedPayload = aggregateSemesterData(
         session.rawRows,
