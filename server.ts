@@ -2361,13 +2361,40 @@ async function startServer() {
   // =========================================================================
 
   // List past uploads for authenticated department
+  // List past uploads for authenticated department (strictly college & department specific)
   app.get(['/api/history', '/api/sessions', '/api/analyses'], requireAuthMiddleware, async (req, res) => {
     try {
       const deptUser = (req as any).department;
-      const collegeId = deptUser?.collegeId;
-      const departmentId = deptUser?.departmentId;
+      const collegeId = deptUser?.collegeId || (req.query.collegeId as string);
+      const departmentId = deptUser?.departmentId || (req.query.departmentId as string);
 
-      const list = await listUploadHistory({
+      if (!departmentId || !collegeId) {
+        return res.status(403).json({ error: 'Department and College session context required.' });
+      }
+
+      let list: any[] = [];
+
+      // 1. Fetch from Supabase (strictly partitioned by college_id and department_id)
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
+        try {
+          const sbRecords = await supabaseListAnalysisRecords({
+            collegeId,
+            departmentId,
+            semester: req.query.semester as string,
+            academic_year: (req.query.academic_year || req.query.academicYear) as string,
+            exam_cycle: (req.query.exam_cycle || req.query.examCycle) as string,
+            search: req.query.search as string,
+          });
+          if (sbRecords && sbRecords.length > 0) {
+            list = sbRecords;
+          }
+        } catch (sbErr) {
+          console.warn('[Supabase History Sync Notice]:', sbErr);
+        }
+      }
+
+      // 2. Also retrieve local database records for this department of the college
+      const localList = await listUploadHistory({
         semester: req.query.semester as string,
         academic_year: (req.query.academic_year || req.query.academicYear) as string,
         exam_cycle: (req.query.exam_cycle || req.query.examCycle) as string,
@@ -2377,19 +2404,56 @@ async function startServer() {
         collegeId,
         departmentId,
       });
-      res.json(list);
+
+      // Merge and deduplicate by ID so no records are lost
+      const seenIds = new Set<string>(list.map((r: any) => r.id));
+      for (const item of localList) {
+        if (!seenIds.has(item.id)) {
+          seenIds.add(item.id);
+          list.push(item);
+        }
+      }
+
+      // Final strict filter: Ensure ONLY this college and department's data is returned
+      const filteredList = list.filter((r: any) => {
+        if (r.collegeId && r.collegeId !== collegeId) return false;
+        if (r.departmentId && r.departmentId !== departmentId) return false;
+        return true;
+      });
+
+      res.json(filteredList);
     } catch (err: any) {
       console.error('Error fetching sessions list:', err);
       res.status(500).json({ error: 'Failed to retrieve saved analyses.' });
     }
   });
 
-  // Retrieve an existing analysis payload from SQLite database by uploadId (tenant-isolated)
+  // Retrieve an existing analysis payload (strictly isolated to department of college)
   app.get(['/api/analysis/:id', '/api/analyses/:id', '/api/history/:id'], requireAuthMiddleware, async (req, res) => {
     try {
       const deptUser = (req as any).department;
       const rawId = decodeURIComponent(req.params.id || '').trim();
-      const session = await getAnalysisSession(rawId, deptUser?.collegeId, deptUser?.departmentId);
+      const collegeId = deptUser?.collegeId || (req.query.collegeId as string);
+      const departmentId = deptUser?.departmentId || (req.query.departmentId as string);
+
+      if (!departmentId || !collegeId) {
+        return res.status(403).json({ error: 'Department and College session context required.' });
+      }
+
+      // 1. Fetch from Supabase first
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
+        try {
+          const sbSession = await supabaseGetAnalysisRecord(rawId, collegeId, departmentId);
+          if (sbSession && sbSession.analysisJson) {
+            return res.json(sbSession.analysisJson);
+          }
+        } catch (sbGetErr) {
+          console.warn('[Supabase Analysis Get Notice]:', sbGetErr);
+        }
+      }
+
+      // 2. Fallback to local store with strict tenant check
+      const session = await getAnalysisSession(rawId, collegeId, departmentId);
       if (!session) {
         return res.status(404).json({ error: 'Analysis session not found in database or unauthorized access.' });
       }
@@ -2400,12 +2464,30 @@ async function startServer() {
     }
   });
 
-  // Download original archived Excel file by upload ID or analysis result ID (tenant-isolated)
+  // Download original archived Excel file by upload ID (tenant-isolated to department of college)
   app.get('/api/download/excel/:id', requireAuthMiddleware, async (req, res) => {
     try {
       const deptUser = (req as any).department;
       const uploadId = req.params.id;
-      const uploadRecord = await getUploadById(uploadId, deptUser?.collegeId, deptUser?.departmentId);
+      const collegeId = deptUser?.collegeId || (req.query.collegeId as string);
+      const departmentId = deptUser?.departmentId || (req.query.departmentId as string);
+
+      // 1. Check if stored in Supabase storage bucket
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
+        try {
+          const sbRecord = await supabaseGetAnalysisRecord(uploadId, collegeId, departmentId);
+          if (sbRecord?.excelFileUrl) {
+            const signedUrl = await supabaseGetSignedAnalysisUrl(sbRecord.excelFileUrl);
+            if (signedUrl) {
+              return res.redirect(signedUrl);
+            }
+          }
+        } catch (sbDlErr) {
+          console.warn('[Supabase Signed URL Notice]:', sbDlErr);
+        }
+      }
+
+      const uploadRecord = await getUploadById(uploadId, collegeId, departmentId);
 
       if (uploadRecord && uploadRecord.excelBlob && uploadRecord.excelBlob !== 'NO_BLOB') {
         try {
@@ -2423,7 +2505,7 @@ async function startServer() {
       }
 
       // Fallback: Reconstruct from session.rawRows
-      const session = await getAnalysisSession(uploadId, deptUser?.collegeId, deptUser?.departmentId);
+      const session = await getAnalysisSession(uploadId, collegeId, departmentId);
       if (!session || !session.rawRows || session.rawRows.length === 0) {
         return res.status(404).json({ error: 'Archived Excel sheet not found for this record.' });
       }
@@ -2525,14 +2607,27 @@ async function startServer() {
     }
   });
 
-  // Delete an analysis session and associated upload from SQLite database (tenant-isolated)
+  // Delete an analysis session and associated upload (tenant-isolated to department of college)
   app.delete(['/api/analyses/:id', '/api/analysis/:id', '/api/history/:id'], requireAuthMiddleware, async (req, res) => {
     try {
       const deptUser = (req as any).department;
-      const deleted = await deleteAnalysisSession(req.params.id, deptUser?.collegeId, deptUser?.departmentId);
-      if (!deleted) {
-        return res.status(404).json({ error: 'Analysis session not found or unauthorized.' });
+      const collegeId = deptUser?.collegeId || (req.query.collegeId as string);
+      const departmentId = deptUser?.departmentId || (req.query.departmentId as string);
+
+      if (!departmentId || !collegeId) {
+        return res.status(403).json({ error: 'Department and College session context required.' });
       }
+
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
+        try {
+          await supabaseDeleteAnalysisRecord(req.params.id, collegeId, departmentId);
+          await supabaseRecordAuditLog('ANALYSIS_DELETED', deptUser?.id || departmentId, 'analysis_records', req.params.id, req.ip);
+        } catch (sbDelErr) {
+          console.warn('[Supabase Delete Notice]:', sbDelErr);
+        }
+      }
+
+      const deleted = await deleteAnalysisSession(req.params.id, collegeId, departmentId);
       res.json({ success: true, message: `Analysis ${req.params.id} deleted successfully.` });
     } catch (err: any) {
       console.error('Error deleting analysis session:', err);
@@ -2872,6 +2967,39 @@ async function startServer() {
         departmentId,
       };
 
+      let excelStoragePath: string | undefined = undefined;
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
+        try {
+          const uploadedStorageKey = await supabaseUploadAnalysisFile(
+            req.file.buffer,
+            fileName,
+            'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            collegeId,
+            departmentId
+          );
+          if (uploadedStorageKey) {
+            excelStoragePath = uploadedStorageKey;
+          }
+
+          await supabaseSaveAnalysisRecord({
+            id: uploadId,
+            collegeId,
+            departmentId,
+            semester: semesterVal,
+            academicYear: academicYearVal,
+            examCycle: examCycleVal,
+            scheme: schemeVal,
+            excelFileUrl: excelStoragePath,
+            analysisJson: analysisPayload,
+            createdBy: deptUser?.email || 'department',
+          });
+
+          await supabaseRecordAuditLog('ANALYSIS_CREATED', deptUser?.id || departmentId, 'analysis_records', uploadId, req.ip);
+        } catch (sbErr) {
+          console.warn('[Supabase Upload Sync Notice]:', sbErr);
+        }
+      }
+
       await saveUploadArchive(uploadArchiveRecord, fileHash, collegeId, departmentId);
       await saveAnalysisSession(record, fileHash, collegeId, departmentId);
 
@@ -2945,6 +3073,25 @@ async function startServer() {
             existingUpload.department = newSemesterDetails.department || newSemesterDetails.branch;
           }
           await saveUploadArchive(existingUpload, undefined, deptUser?.collegeId, deptUser?.departmentId);
+        }
+      }
+
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
+        try {
+          await supabaseSaveAnalysisRecord({
+            id: uploadId,
+            collegeId: deptUser?.collegeId,
+            departmentId: deptUser?.departmentId,
+            semester: newSemesterDetails?.semester || (session as any).semester || 'Semester',
+            academicYear: newSemesterDetails?.academicYear || (session as any).academicYear || 'AcademicYear',
+            examCycle: newSemesterDetails?.examination || (session as any).examCycle || 'ExamCycle',
+            scheme: newSemesterDetails?.scheme || '2022',
+            analysisJson: updatedPayload,
+            createdBy: deptUser?.email || 'department',
+          });
+          await supabaseRecordAuditLog('ANALYSIS_REANALYZED', deptUser?.id || deptUser?.departmentId, 'analysis_records', uploadId, req.ip);
+        } catch (sbReErr) {
+          console.warn('[Supabase Reanalyze Sync Notice]:', sbReErr);
         }
       }
 

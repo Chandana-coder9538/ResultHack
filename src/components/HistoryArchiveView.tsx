@@ -97,18 +97,29 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
   const [itemToDelete, setItemToDelete] = useState<UploadHistoryItem | null>(null);
   const [isDeleting, setIsDeleting] = useState<boolean>(false);
 
-  // Fetch available history records from database (non-blocking, no direct raw dump displayed)
+  // Fetch available history records from database (strictly filtered for this department of the college)
   const fetchAvailableRecords = async () => {
     setHistoryLoading(true);
     try {
-      const res = await fetch('/api/history', {
+      const q = new URLSearchParams();
+      if (collegeId) q.set('collegeId', collegeId);
+      if (departmentId) q.set('departmentId', departmentId);
+      const url = `/api/history${q.toString() ? `?${q.toString()}` : ''}`;
+
+      const res = await fetch(url, {
         headers: {
           Authorization: `Bearer ${token || ''}`,
         },
       });
       if (res.ok) {
         const data: UploadHistoryItem[] = await res.json();
-        setAllHistoryItems(data || []);
+        // Client-side safeguard: strictly filter to active college & department
+        const filtered = (data || []).filter((item: any) => {
+          if (collegeId && item.collegeId && item.collegeId !== collegeId) return false;
+          if (departmentId && item.departmentId && item.departmentId !== departmentId) return false;
+          return true;
+        });
+        setAllHistoryItems(filtered);
       }
     } catch (err) {
       console.warn('Background archive sync skipped:', err);
@@ -119,7 +130,7 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
 
   useEffect(() => {
     fetchAvailableRecords();
-  }, [token]);
+  }, [token, collegeId, departmentId]);
 
   // Autopopulate Examination Cycles based on user input: Semester, Academic Year, and Scheme
   const autopopulatedExamCycles = useMemo(() => {
@@ -203,8 +214,13 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
     setLoadingActionId(item.id);
     setActiveActionType('view');
     try {
+      const q = new URLSearchParams();
+      if (collegeId) q.set('collegeId', collegeId);
+      if (departmentId) q.set('departmentId', departmentId);
+      const queryStr = q.toString() ? `?${q.toString()}` : '';
+
       const targetId = item.analysisResultId || item.uploadId || item.id;
-      let res = await fetch(`/api/analysis/${encodeURIComponent(targetId)}`, {
+      let res = await fetch(`/api/analysis/${encodeURIComponent(targetId)}${queryStr}`, {
         headers: {
           Authorization: `Bearer ${token || ''}`,
         },
@@ -212,7 +228,7 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
 
       // Fallback: If 404 and item.id is different from targetId, try item.id
       if (!res.ok && res.status === 404 && item.id && item.id !== targetId) {
-        res = await fetch(`/api/analysis/${encodeURIComponent(item.id)}`, {
+        res = await fetch(`/api/analysis/${encodeURIComponent(item.id)}${queryStr}`, {
           headers: {
             Authorization: `Bearer ${token || ''}`,
           },
@@ -247,8 +263,13 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
     setLoadingActionId(item.id);
     setActiveActionType('excel');
     try {
+      const q = new URLSearchParams();
+      if (collegeId) q.set('collegeId', collegeId);
+      if (departmentId) q.set('departmentId', departmentId);
+      const queryStr = q.toString() ? `?${q.toString()}` : '';
+
       const targetId = item.id || item.analysisResultId || item.uploadId;
-      const res = await fetch(`/api/download/excel/${targetId}`, {
+      const res = await fetch(`/api/download/excel/${targetId}${queryStr}`, {
         headers: {
           Authorization: `Bearer ${token || ''}`,
         },
@@ -290,8 +311,13 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
     setLoadingActionId(item.id);
     setActiveActionType('pdf');
     try {
+      const q = new URLSearchParams();
+      if (collegeId) q.set('collegeId', collegeId);
+      if (departmentId) q.set('departmentId', departmentId);
+      const queryStr = q.toString() ? `?${q.toString()}` : '';
+
       const targetId = item.analysisResultId || item.uploadId || item.id;
-      const res = await fetch(`/api/download/pdf/${targetId}`, {
+      const res = await fetch(`/api/download/pdf/${targetId}${queryStr}`, {
         headers: {
           Authorization: `Bearer ${token || ''}`,
         },
@@ -344,8 +370,13 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
     setActiveActionType('delete');
 
     try {
+      const q = new URLSearchParams();
+      if (collegeId) q.set('collegeId', collegeId);
+      if (departmentId) q.set('departmentId', departmentId);
+      const queryStr = q.toString() ? `?${q.toString()}` : '';
+
       const targetId = item.analysisResultId || item.uploadId || item.id;
-      const res = await fetch(`/api/history/${targetId}`, {
+      const res = await fetch(`/api/history/${targetId}${queryStr}`, {
         method: 'DELETE',
         headers: {
           Authorization: `Bearer ${token || ''}`,
@@ -416,9 +447,16 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
                   <Clock className="w-3 h-3" />
                   Instant Retrieval
                 </span>
+                {(department?.name || college?.name) && (
+                  <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-indigo-50 text-indigo-700 border border-indigo-200">
+                    <GraduationCap className="w-3.5 h-3.5" />
+                    <span>{department?.name || 'Department Vault'}</span>
+                    {college?.name && <span className="text-indigo-400 font-normal">• {college.name}</span>}
+                  </span>
+                )}
               </div>
               <p className="text-xs text-slate-500 mt-1 max-w-2xl leading-relaxed">
-                Enter your Semester, Academic Year, and Curriculum Scheme. The system will autopopulate the available examination cycles and ask you to select the particular cycle analysis to inspect, export, or delete.
+                Archived records are stored specifically for <strong className="text-slate-800 font-semibold">{department?.name || 'your department'}</strong> ({college?.name || 'your institution'}). Enter your Semester, Academic Year, and Scheme to instantly reopen, compare, download, or manage past analyses.
               </p>
             </div>
           </div>

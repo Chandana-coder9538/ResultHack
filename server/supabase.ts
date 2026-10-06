@@ -1075,6 +1075,14 @@ export async function supabaseDeleteAnalysisRecord(id: string, collegeId?: strin
   if (!sb) return false;
 
   try {
+    // Optionally clean up storage file
+    try {
+      const { data: rec } = await sb.from('analysis_records').select('excel_file_url').eq('id', id).maybeSingle();
+      if (rec?.excel_file_url) {
+        await sb.storage.from('analysis-files').remove([rec.excel_file_url]);
+      }
+    } catch {}
+
     let query = sb.from('analysis_records').delete().eq('id', id);
     if (collegeId) query = query.eq('college_id', collegeId);
     if (departmentId) query = query.eq('department_id', departmentId);
@@ -1161,7 +1169,9 @@ export async function supabaseUploadLogo(
 export async function supabaseUploadAnalysisFile(
   fileBuffer: Buffer,
   filename: string,
-  mimeType: string
+  mimeType: string,
+  collegeId?: string,
+  departmentId?: string
 ): Promise<string | null> {
   if (!isSupabaseConfigured()) return null;
   const sb = getSupabase();
@@ -1169,7 +1179,8 @@ export async function supabaseUploadAnalysisFile(
 
   try {
     const cleanExt = filename.split('.').pop() || 'xlsx';
-    const uniqueKey = `analysis_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${cleanExt}`;
+    const folderPrefix = collegeId && departmentId ? `${collegeId}/${departmentId}` : 'general';
+    const uniqueKey = `${folderPrefix}/analysis_${Date.now()}_${crypto.randomBytes(4).toString('hex')}.${cleanExt}`;
 
     const { data, error } = await sb.storage
       .from('analysis-files')
