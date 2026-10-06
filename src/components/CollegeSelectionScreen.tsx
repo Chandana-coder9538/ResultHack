@@ -13,9 +13,11 @@ import {
   AlertTriangle,
   CheckCircle2,
   ShieldCheck,
+  Database,
 } from 'lucide-react';
 import { College } from '../types/auth';
 import { SmtpSetupModal } from './SmtpSetupModal';
+import { SupabaseStatusModal } from './SupabaseStatusModal';
 import { useTechie } from '../context/TechieContext';
 
 interface CollegeSelectionScreenProps {
@@ -32,6 +34,7 @@ export const CollegeSelectionScreen: React.FC<CollegeSelectionScreenProps> = ({
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [isSmtpModalOpen, setIsSmtpModalOpen] = useState(false);
+  const [isSupabaseModalOpen, setIsSupabaseModalOpen] = useState(false);
   const [searchStatus, setSearchStatus] = useState<{
     type: 'success' | 'info' | 'error';
     message: string;
@@ -230,7 +233,16 @@ export const CollegeSelectionScreen: React.FC<CollegeSelectionScreenProps> = ({
               title="Configure real SMTP email delivery and test connection"
             >
               <Mail className="w-3.5 h-3.5 text-blue-400" />
-              <span>Email & SMTP Setup</span>
+              <span>Email & SMTP</span>
+            </button>
+
+            <button
+              onClick={() => setIsSupabaseModalOpen(true)}
+              className="inline-flex items-center gap-1.5 px-3 py-2 rounded-xl bg-emerald-950/40 hover:bg-emerald-900/60 text-emerald-300 hover:text-white text-xs font-semibold border border-emerald-500/30 transition-colors cursor-pointer"
+              title="View Supabase database status and copy 1-click SQL schema"
+            >
+              <Database className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Database & Supabase</span>
             </button>
 
             <button
@@ -455,18 +467,30 @@ export const CollegeSelectionScreen: React.FC<CollegeSelectionScreenProps> = ({
       <footer className="relative z-10 border-t border-slate-800 bg-slate-950/80 py-4 px-6 text-center text-xs text-slate-500">
         <div className="flex flex-col sm:flex-row items-center justify-between max-w-7xl mx-auto gap-2">
           <span>Multi-Tenant Academic Marks Analysis Suite • Session-Based Authorization</span>
-          <button
-            onClick={() => setIsSmtpModalOpen(true)}
-            className="text-blue-400 hover:text-blue-300 transition-colors inline-flex items-center gap-1"
-          >
-            <Mail className="w-3.5 h-3.5" />
-            <span>Email & SMTP Setup Guide</span>
-          </button>
+          <div className="flex items-center gap-4">
+            <button
+              onClick={() => setIsSupabaseModalOpen(true)}
+              className="text-emerald-400 hover:text-emerald-300 transition-colors inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Database className="w-3.5 h-3.5" />
+              <span>Database & Supabase</span>
+            </button>
+            <button
+              onClick={() => setIsSmtpModalOpen(true)}
+              className="text-blue-400 hover:text-blue-300 transition-colors inline-flex items-center gap-1 cursor-pointer"
+            >
+              <Mail className="w-3.5 h-3.5" />
+              <span>Email & SMTP</span>
+            </button>
+          </div>
         </div>
       </footer>
 
       {/* SMTP / Email Setup Guide Modal */}
       <SmtpSetupModal isOpen={isSmtpModalOpen} onClose={() => setIsSmtpModalOpen(false)} />
+
+      {/* Supabase Status & SQL Schema Modal */}
+      <SupabaseStatusModal isOpen={isSupabaseModalOpen} onClose={() => setIsSupabaseModalOpen(false)} />
     </div>
   );
 };

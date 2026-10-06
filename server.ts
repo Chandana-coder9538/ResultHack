@@ -98,6 +98,9 @@ import {
 import cookieParser from 'cookie-parser';
 import {
   isSupabaseConfigured,
+  isSupabaseReady,
+  getSupabaseDiagnostics,
+  SUPABASE_SQL_SCHEMA,
   getSupabase,
   supabaseListColleges,
   supabaseGetCollegeById,
@@ -218,13 +221,31 @@ async function startServer() {
   // Health and Security Status
   app.get('/api/health', async (req, res) => {
     const smtpReady = await isSmtpConfigured();
-    const supabaseReady = isSupabaseConfigured();
+    const supabaseConfigured = isSupabaseConfigured();
+    const supabaseTablesReady = supabaseConfigured ? await isSupabaseReady() : false;
     res.json({
       status: 'ok',
       time: new Date().toISOString(),
       smtpConfigured: smtpReady,
-      supabaseConfigured: supabaseReady,
+      supabaseConfigured,
+      supabaseTablesReady,
     });
+  });
+
+  // Supabase Database Status & Migration Schema APIs
+  app.get('/api/supabase/status', async (req, res) => {
+    try {
+      const forceCheck = req.query.check === 'true';
+      const status = await getSupabaseDiagnostics(forceCheck);
+      res.json(status);
+    } catch (err: any) {
+      res.status(500).json({ error: 'Failed to retrieve Supabase status.' });
+    }
+  });
+
+  app.get('/api/supabase/schema', (req, res) => {
+    res.setHeader('Content-Type', 'text/plain');
+    res.send(SUPABASE_SQL_SCHEMA);
   });
 
   // SMTP Settings & Diagnostic APIs
@@ -955,7 +976,7 @@ async function startServer() {
   app.get('/api/colleges', async (req, res) => {
     try {
       const search = req.query.search as string;
-      if (isSupabaseConfigured()) {
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
         const sbColleges = await supabaseListColleges();
         if (sbColleges !== null && sbColleges.length > 0) {
           if (search) {
@@ -983,7 +1004,7 @@ async function startServer() {
   // 2. Get specific college details
   app.get('/api/colleges/:id', async (req, res) => {
     try {
-      if (isSupabaseConfigured()) {
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
         const sbCol = await supabaseGetCollegeById(req.params.id);
         if (sbCol) {
           const { passwordHash, ...safe } = sbCol;
@@ -1637,7 +1658,7 @@ async function startServer() {
   app.get('/api/colleges/:collegeId/departments', async (req, res) => {
     try {
       const collegeId = req.params.collegeId;
-      if (isSupabaseConfigured()) {
+      if (isSupabaseConfigured() && (await isSupabaseReady())) {
         const sbDepts = await supabaseListDepartments(collegeId);
         if (sbDepts !== null && sbDepts.length > 0) {
           return res.json(sbDepts);
