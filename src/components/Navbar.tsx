@@ -120,9 +120,13 @@ export const Navbar: React.FC<NavbarProps> = ({
             </div>
 
             {college?.universityLogoUrl && (
-              <div className="hidden xl:flex items-center gap-1.5 border-l border-slate-200 pl-3 shrink-0" title={college.universityName}>
-                <div className="w-7 h-7 rounded-lg bg-white border border-slate-200 p-0.5 overflow-hidden">
-                  <img src={college.universityLogoUrl} alt="University" className="w-full h-full object-contain" />
+              <div className="hidden sm:flex items-center gap-1.5 border-l border-slate-200 pl-3 shrink-0" title={`Affiliated / Constituent to: ${college.universityName}`}>
+                <div className="w-8 h-8 rounded-lg bg-white border border-slate-200 p-1 overflow-hidden shadow-2xs flex items-center justify-center">
+                  <img src={college.universityLogoUrl} alt={college.universityName || 'University'} className="w-full h-full object-contain" />
+                </div>
+                <div className="hidden lg:block text-left">
+                  <div className="text-[10px] uppercase font-bold text-slate-400 tracking-wider">Affiliated To</div>
+                  <div className="text-[11px] font-semibold text-slate-700 truncate max-w-[140px] xl:max-w-[180px]">{college.universityName}</div>
                 </div>
               </div>
             )}

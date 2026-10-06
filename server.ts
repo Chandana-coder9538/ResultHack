@@ -95,6 +95,35 @@ import {
   verifySmtpConnection,
   SmtpConfig,
 } from './server/email.js';
+import cookieParser from 'cookie-parser';
+import {
+  isSupabaseConfigured,
+  getSupabase,
+  supabaseListColleges,
+  supabaseGetCollegeById,
+  supabaseGetCollegeByEmail,
+  supabaseGetCollegeByName,
+  supabaseCreateCollege,
+  supabaseDeleteCollege,
+  supabaseListDepartments,
+  supabaseGetDepartmentById,
+  supabaseGetDepartmentByEmail,
+  supabaseCreateDepartment,
+  supabaseDeleteDepartment,
+  supabaseSavePendingRegistration,
+  supabaseGetPendingRegistration,
+  supabaseDeletePendingRegistration,
+  supabaseSaveOtp,
+  supabaseVerifyOtp,
+  supabaseSaveAnalysisRecord,
+  supabaseGetAnalysisRecord,
+  supabaseListAnalysisRecords,
+  supabaseDeleteAnalysisRecord,
+  supabaseRecordAuditLog,
+  supabaseUploadLogo,
+  supabaseUploadAnalysisFile,
+  supabaseGetSignedAnalysisUrl,
+} from './server/supabase.js';
 
 const storage = multer.memoryStorage();
 const upload = multer({
@@ -111,6 +140,23 @@ function isPasswordValid(password: string): boolean {
   const hasLetter = /[a-zA-Z]/.test(password);
   const hasNumber = /[0-9]/.test(password);
   return hasLetter && hasNumber;
+}
+
+function parseDataUrlToBuffer(dataUrl?: string): { buffer: Buffer; mimeType: string; filename: string } | null {
+  if (!dataUrl || !dataUrl.startsWith('data:')) return null;
+  try {
+    const matches = dataUrl.match(/^data:([A-Za-z-+\/]+);base64,(.+)$/);
+    if (!matches || matches.length !== 3) return null;
+    const mimeType = matches[1];
+    const ext = mimeType.split('/')[1] || 'png';
+    return {
+      mimeType,
+      filename: `logo_${Date.now()}.${ext}`,
+      buffer: Buffer.from(matches[2], 'base64'),
+    };
+  } catch {
+    return null;
+  }
 }
 
 async function startServer() {
@@ -154,6 +200,7 @@ async function startServer() {
 
   app.use('/api/', generalLimiter);
 
+  app.use(cookieParser());
   app.use(express.json({ limit: '50mb' }));
   app.use(express.urlencoded({ extended: true, limit: '50mb' }));
 
@@ -171,10 +218,12 @@ async function startServer() {
   // Health and Security Status
   app.get('/api/health', async (req, res) => {
     const smtpReady = await isSmtpConfigured();
+    const supabaseReady = isSupabaseConfigured();
     res.json({
       status: 'ok',
       time: new Date().toISOString(),
       smtpConfigured: smtpReady,
+      supabaseConfigured: supabaseReady,
     });
   });
 
@@ -627,16 +676,50 @@ async function startServer() {
         return res.status(400).json({ error: 'All registration fields are required.' });
       }
 
+      let finalCollegeLogo = collegeLogoUrl;
+      let finalUniversityLogo = universityLogoUrl;
+
+      if (isSupabaseConfigured()) {
+        const colLogoParsed = parseDataUrlToBuffer(collegeLogoUrl);
+        if (colLogoParsed) {
+          const uploadedUrl = await supabaseUploadLogo(colLogoParsed.buffer, colLogoParsed.filename, colLogoParsed.mimeType);
+          if (uploadedUrl) finalCollegeLogo = uploadedUrl;
+        }
+
+        const uniLogoParsed = parseDataUrlToBuffer(universityLogoUrl);
+        if (uniLogoParsed) {
+          const uploadedUrl = await supabaseUploadLogo(uniLogoParsed.buffer, uniLogoParsed.filename, uniLogoParsed.mimeType);
+          if (uploadedUrl) finalUniversityLogo = uploadedUrl;
+        }
+      }
+
       const passwordHash = await bcrypt.hash(cleanPass, 10);
       const college = await createCollege({
         name: cleanName,
         universityName: cleanUniv,
-        collegeLogoUrl,
-        universityLogoUrl,
+        collegeLogoUrl: finalCollegeLogo,
+        universityLogoUrl: finalUniversityLogo,
         email: cleanEmail,
         passwordHash,
         emailVerified: true,
       });
+
+      if (isSupabaseConfigured()) {
+        try {
+          await supabaseCreateCollege({
+            name: cleanName,
+            universityName: cleanUniv,
+            collegeLogoUrl: finalCollegeLogo,
+            universityLogoUrl: finalUniversityLogo,
+            email: cleanEmail,
+            passwordHash,
+            emailVerified: true,
+          });
+          await supabaseRecordAuditLog('COLLEGE_REGISTERED', college.id, 'college', college.id, req.ip);
+        } catch (sbErr) {
+          console.warn('[SUPABASE COLLEGE CREATION]', sbErr);
+        }
+      }
 
       await deletePendingRegistration(cleanEmail, 'college');
 
@@ -644,6 +727,13 @@ async function startServer() {
         collegeId: college.id,
         email: college.email,
         name: college.name,
+      });
+
+      res.cookie('college_token', token, {
+        httpOnly: true,
+        sameSite: 'lax',
+        secure: process.env.NODE_ENV === 'production',
+        maxAge: 4 * 3600 * 1000,
       });
 
       await logAuditAction({
@@ -865,6 +955,23 @@ async function startServer() {
   app.get('/api/colleges', async (req, res) => {
     try {
       const search = req.query.search as string;
+      if (isSupabaseConfigured()) {
+        const sbColleges = await supabaseListColleges();
+        if (sbColleges !== null && sbColleges.length > 0) {
+          if (search) {
+            const q = search.trim().toLowerCase();
+            return res.json(
+              sbColleges.filter(
+                (c: any) =>
+                  c.name.toLowerCase().includes(q) ||
+                  c.universityName?.toLowerCase().includes(q) ||
+                  c.email.toLowerCase().includes(q)
+              )
+            );
+          }
+          return res.json(sbColleges);
+        }
+      }
       const colleges = await listColleges(search);
       res.json(colleges);
     } catch (err: any) {
@@ -876,6 +983,13 @@ async function startServer() {
   // 2. Get specific college details
   app.get('/api/colleges/:id', async (req, res) => {
     try {
+      if (isSupabaseConfigured()) {
+        const sbCol = await supabaseGetCollegeById(req.params.id);
+        if (sbCol) {
+          const { passwordHash, ...safe } = sbCol;
+          return res.json(safe);
+        }
+      }
       const college = await getCollegeById(req.params.id);
       if (!college) {
         return res.status(404).json({ error: 'College not found.' });
@@ -1523,6 +1637,12 @@ async function startServer() {
   app.get('/api/colleges/:collegeId/departments', async (req, res) => {
     try {
       const collegeId = req.params.collegeId;
+      if (isSupabaseConfigured()) {
+        const sbDepts = await supabaseListDepartments(collegeId);
+        if (sbDepts !== null && sbDepts.length > 0) {
+          return res.json(sbDepts);
+        }
+      }
       const departments = await listDepartments(collegeId);
       res.json(departments);
     } catch (err: any) {
@@ -2341,7 +2461,7 @@ async function startServer() {
                 semType: 'Even Semester',
                 examination: uploadRec.examCycle || 'June / July 2025',
                 academicYear: uploadRec.academicYear || '2025-26',
-                department: uploadRec.department || deptUser?.departmentName || 'Department of Computer Science & Engineering',
+                department: uploadRec.department || deptUser?.departmentName || 'Academic Department',
               }
             );
             semName = uploadRec.semester;
@@ -2713,7 +2833,7 @@ async function startServer() {
       const academicYearVal = userSemesterDetails?.academicYear || '2025-26';
       const examCycleVal = userSemesterDetails?.examination || 'June / July 2025';
       const schemeVal = userSemesterDetails?.scheme || '2022';
-      const departmentVal = userSemesterDetails?.department || deptUser?.departmentName || 'Department of Computer Science & Engineering';
+      const departmentVal = userSemesterDetails?.department || deptUser?.departmentName || 'Academic Department';
 
       const uploadArchiveRecord: StoredUploadRecord = {
         id: uploadRecordId,

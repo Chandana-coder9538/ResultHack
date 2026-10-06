@@ -258,7 +258,7 @@ export const LoginScreen: React.FC<LoginScreenProps> = ({ onLoginSuccess }) => {
             {/* Department Footer Note */}
             <div className="pt-4 border-t border-slate-100 text-center">
               <p className="text-[11px] text-slate-400">
-                Authorized Personnel Only • Department of Computer Science & Engineering
+                Authorized Personnel Only • Academic Department Examination Cell
               </p>
             </div>
           </div>

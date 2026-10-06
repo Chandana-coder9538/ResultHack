@@ -235,17 +235,23 @@ export async function sendEmail(
     }
   }
 
-  // Fallback: Development / Demo Mode when no SMTP credentials are provided
+  // Fallback / DEV_MODE: Log OTP to console ONLY when DEV_MODE is explicitly enabled
   const recipientStr = Array.isArray(to) ? to.join(', ') : to;
-  console.log('====================================================');
-  console.log(`[EMAIL SERVICE] Simulated email delivery to: ${recipientStr}`);
-  if (cc) {
-    console.log(`[EMAIL SERVICE] CC: ${Array.isArray(cc) ? cc.join(', ') : cc}`);
+  const isDevMode = process.env.DEV_MODE === 'true';
+
+  if (isDevMode) {
+    console.log('====================================================');
+    console.log(`[DEV_MODE EMAIL] Simulated email delivery to: ${recipientStr}`);
+    if (cc) {
+      console.log(`[DEV_MODE EMAIL] CC: ${Array.isArray(cc) ? cc.join(', ') : cc}`);
+    }
+    console.log(`[DEV_MODE EMAIL] Subject: ${subject}`);
+    console.log(`[DEV_MODE EMAIL] Body text:`);
+    console.log(text);
+    console.log('====================================================');
+  } else {
+    console.log(`[EMAIL DISPATCH] Notification processed for: ${recipientStr}`);
   }
-  console.log(`[EMAIL SERVICE] Subject: ${subject}`);
-  console.log(`[EMAIL SERVICE] Body text:`);
-  console.log(text);
-  console.log('====================================================');
 
   return {
     success: true,
