@@ -194,6 +194,7 @@ const DashboardView: React.FC<DashboardViewProps> = ({
         {currentTab === 'archive' && (
           <HistoryArchiveView
             onLoadSession={onLoadSession}
+            onSelectAnalysis={onLoadSession}
             activeUploadId={payload?.uploadId}
             collegeId={college?.id}
             departmentId={department?.id}

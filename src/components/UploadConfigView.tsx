@@ -150,14 +150,25 @@ export const UploadConfigView: React.FC<UploadConfigViewProps> = (props) => {
   const loadHistory = async () => {
     setHistoryLoading(true);
     try {
-      const res = await fetch('/api/history', {
+      const q = new URLSearchParams();
+      if (college?.id) q.set('collegeId', college.id);
+      if (department?.id) q.set('departmentId', department.id);
+      const url = `/api/history${q.toString() ? `?${q.toString()}` : ''}`;
+      const res = await fetch(url, {
         headers: {
           ...(token ? { Authorization: `Bearer ${token}` } : {}),
         },
       });
       if (res.ok) {
         const data = await res.json();
-        setHistorySessions(data || []);
+        const filtered = (data || []).filter((item: any) => {
+          const itemCol = item.collegeId || item.college_id;
+          const itemDept = item.departmentId || item.department_id;
+          if (college?.id && itemCol !== college.id) return false;
+          if (department?.id && itemDept !== department.id) return false;
+          return true;
+        });
+        setHistorySessions(filtered);
       }
     } catch {
       // ignore
@@ -168,7 +179,7 @@ export const UploadConfigView: React.FC<UploadConfigViewProps> = (props) => {
 
   useEffect(() => {
     loadHistory();
-  }, [payload]);
+  }, [payload, college?.id, department?.id]);
 
   const [sessionToDelete, setSessionToDelete] = useState<{
     id: string;

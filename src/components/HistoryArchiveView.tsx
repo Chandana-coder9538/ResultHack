@@ -88,6 +88,7 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
   const [historyLoading, setHistoryLoading] = useState<boolean>(true);
   const [error, setError] = useState<string | null>(null);
   const [actionNotice, setActionNotice] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
+  const [directorySearch, setDirectorySearch] = useState<string>('');
 
   // Action loading states
   const [loadingActionId, setLoadingActionId] = useState<string | null>(null);
@@ -115,8 +116,10 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
         const data: UploadHistoryItem[] = await res.json();
         // Client-side safeguard: strictly filter to active college & department
         const filtered = (data || []).filter((item: any) => {
-          if (collegeId && item.collegeId && item.collegeId !== collegeId) return false;
-          if (departmentId && item.departmentId && item.departmentId !== departmentId) return false;
+          const itemCol = item.collegeId || item.college_id;
+          const itemDept = item.departmentId || item.department_id;
+          if (collegeId && itemCol !== collegeId) return false;
+          if (departmentId && itemDept !== departmentId) return false;
           return true;
         });
         setAllHistoryItems(filtered);
@@ -206,8 +209,29 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
       }
     });
 
-    return list.slice(0, 4);
+    return list.slice(0, 6);
   }, [allHistoryItems]);
+
+  // Filtered department archive items for directory search
+  const filteredDirectoryItems = useMemo(() => {
+    if (!directorySearch.trim()) return allHistoryItems;
+    const s = directorySearch.toLowerCase().trim();
+    return allHistoryItems.filter((item) => {
+      const sem = (item.semester || '').toLowerCase();
+      const yr = (item.academicYear || '').toLowerCase();
+      const cyc = (item.examCycle || '').toLowerCase();
+      const sch = (item.scheme || '').toLowerCase();
+      const fn = (item.originalFilename || item.fileName || '').toLowerCase();
+      return sem.includes(s) || yr.includes(s) || cyc.includes(s) || sch.includes(s) || fn.includes(s);
+    });
+  }, [allHistoryItems, directorySearch]);
+
+  const handleSelectRecordFromDirectory = (item: UploadHistoryItem) => {
+    if (item.semester) setInputSemester(item.semester);
+    if (item.academicYear) setInputAcademicYear(item.academicYear);
+    if (item.scheme) setInputScheme(item.scheme);
+    setSelectedCycleId(item.id);
+  };
 
   // Action 1: View full analysis session in interactive app
   const handleViewAnalysis = async (item: UploadHistoryItem) => {
@@ -245,9 +269,12 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
         type: 'success',
         message: `Successfully loaded analysis dashboard for ${item.semester} (${item.academicYear}, ${item.examCycle}).`,
       });
-      onSelectAnalysis(payload);
+      if (onSelectAnalysis) {
+        onSelectAnalysis(payload);
+      } else if (onLoadSession) {
+        onLoadSession(payload);
+      }
     } catch (err: any) {
-      console.error('Error opening analysis:', err);
       setActionNotice({
         type: 'error',
         message: `Unable to open analysis: ${err.message}`,
@@ -941,6 +968,215 @@ export const HistoryArchiveView: React.FC<HistoryArchiveViewProps> = ({
                 </div>
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* DEPARTMENT PREVIOUS ANALYSES DIRECTORY */}
+      <div className="bg-white rounded-2xl border border-slate-200/90 shadow-sm p-6 sm:p-7 space-y-5">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-100 pb-4">
+          <div>
+            <div className="flex items-center gap-2 text-xs font-bold text-indigo-600 uppercase tracking-wider mb-1">
+              <Archive className="w-4 h-4" />
+              <span>Department Archive Directory</span>
+            </div>
+            <h3 className="text-lg font-bold text-slate-900 tracking-tight flex items-center gap-2 flex-wrap">
+              <span>All Stored Analyses for {department?.name || 'Your Department'}</span>
+              <span className="text-xs font-semibold px-2.5 py-0.5 rounded-full bg-indigo-50 text-indigo-700 border border-indigo-200 font-mono">
+                {allHistoryItems.length} {allHistoryItems.length === 1 ? 'Record' : 'Records'}
+              </span>
+            </h3>
+            <p className="text-xs text-slate-500 mt-0.5">
+              Strictly stored and partitioned for <strong className="text-slate-800 font-semibold">{department?.name || 'Department'}</strong> at <strong className="text-slate-800 font-semibold">{college?.name || 'College'}</strong>.
+            </p>
+          </div>
+
+          {/* Quick Search in Department Vault */}
+          <div className="relative sm:w-72">
+            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              value={directorySearch}
+              onChange={(e) => setDirectorySearch(e.target.value)}
+              placeholder="Search by sem, cycle, scheme..."
+              className="w-full pl-9 pr-3 py-2 text-xs rounded-xl border border-slate-200 bg-slate-50/60 focus:bg-white text-slate-900 focus:outline-hidden focus:ring-2 focus:ring-indigo-500/20 focus:border-indigo-500 transition-all"
+            />
+            {directorySearch && (
+              <button
+                type="button"
+                onClick={() => setDirectorySearch('')}
+                className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 text-xs cursor-pointer"
+              >
+                ✕
+              </button>
+            )}
+          </div>
+        </div>
+
+        {allHistoryItems.length === 0 ? (
+          <div className="text-center py-10 px-4 bg-slate-50/60 rounded-xl border border-dashed border-slate-200 space-y-2">
+            <div className="w-10 h-10 rounded-xl bg-slate-100 text-slate-400 flex items-center justify-center mx-auto">
+              <Archive className="w-5 h-5" />
+            </div>
+            <h4 className="text-sm font-bold text-slate-800">
+              No Previous Analyses Stored for {department?.name || 'this Department'}
+            </h4>
+            <p className="text-xs text-slate-500 max-w-md mx-auto">
+              Analyses uploaded by your department will be automatically encrypted and archived here specifically under your department's partition.
+            </p>
+            <div className="pt-2">
+              <button
+                type="button"
+                onClick={onNavigateUpload}
+                className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg transition-colors inline-flex items-center gap-1.5 cursor-pointer shadow-xs"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                <span>Upload First Spreadsheet</span>
+              </button>
+            </div>
+          </div>
+        ) : filteredDirectoryItems.length === 0 ? (
+          <div className="text-center py-8 text-xs text-slate-500 bg-slate-50 rounded-xl border border-slate-200">
+            No department records match "{directorySearch}". Try a different search query.
+          </div>
+        ) : (
+          <div className="overflow-x-auto rounded-xl border border-slate-200/90 shadow-2xs">
+            <table className="w-full text-left text-xs border-collapse">
+              <thead>
+                <tr className="bg-slate-50/90 border-b border-slate-200 text-slate-600 font-semibold text-[11px] uppercase tracking-wider">
+                  <th className="py-3 px-3.5">Semester & Exam Cycle</th>
+                  <th className="py-3 px-3.5">Scheme</th>
+                  <th className="py-3 px-3.5">Students / Pass %</th>
+                  <th className="py-3 px-3.5">Archived Spreadsheet</th>
+                  <th className="py-3 px-3.5">Analyzed On</th>
+                  <th className="py-3 px-3.5 text-right">Actions</th>
+                </tr>
+              </thead>
+              <tbody className="divide-y divide-slate-100">
+                {filteredDirectoryItems.map((item) => {
+                  const isCurrentSelected = selectedCycleId === item.id;
+                  const dateStr = item.uploadedAt || item.createdAt
+                    ? new Date(item.uploadedAt || item.createdAt).toLocaleDateString(undefined, {
+                        year: 'numeric',
+                        month: 'short',
+                        day: 'numeric',
+                      })
+                    : '—';
+
+                  const passRate = item.overallPassPercentage ?? 0;
+                  const passBadgeClass =
+                    passRate >= 75
+                      ? 'bg-emerald-50 text-emerald-700 border-emerald-200'
+                      : passRate >= 50
+                      ? 'bg-blue-50 text-blue-700 border-blue-200'
+                      : 'bg-amber-50 text-amber-700 border-amber-200';
+
+                  return (
+                    <tr
+                      key={item.id}
+                      className={`transition-colors hover:bg-blue-50/40 ${
+                        isCurrentSelected ? 'bg-blue-50/60 font-medium' : ''
+                      }`}
+                    >
+                      <td className="py-3 px-3.5">
+                        <div className="flex items-center gap-2">
+                          <span className="font-bold text-slate-900 font-mono bg-slate-100 px-2 py-0.5 rounded text-[11px] border border-slate-200">
+                            {item.semester || 'Semester'}
+                          </span>
+                          <div>
+                            <div className="font-semibold text-slate-800">{item.examCycle || 'Cycle'}</div>
+                            <div className="text-[10px] text-slate-400">{item.academicYear || ''}</div>
+                          </div>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3.5">
+                        <span className="font-mono font-bold text-purple-700 text-[11px] bg-purple-50 px-2 py-0.5 rounded border border-purple-200">
+                          Scheme {item.scheme || '2022'}
+                        </span>
+                      </td>
+
+                      <td className="py-3 px-3.5">
+                        <div className="flex items-center gap-2">
+                          <span className="text-slate-700 font-mono font-bold">
+                            {item.totalStudents ?? 0}
+                          </span>
+                          <span className="text-slate-400 text-[10px]">std</span>
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold border font-mono ${passBadgeClass}`}>
+                            {passRate.toFixed(1)}%
+                          </span>
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3.5">
+                        <div
+                          className="font-mono text-slate-700 truncate max-w-[170px] text-[11px]"
+                          title={item.originalFilename || item.fileName}
+                        >
+                          {item.originalFilename || item.fileName || 'marks.xlsx'}
+                        </div>
+                      </td>
+
+                      <td className="py-3 px-3.5 text-slate-500 font-mono text-[11px]">
+                        {dateStr}
+                      </td>
+
+                      <td className="py-3 px-3.5 text-right">
+                        <div className="flex items-center justify-end gap-1.5">
+                          {/* Quick Select & View */}
+                          <button
+                            type="button"
+                            onClick={() => {
+                              handleSelectRecordFromDirectory(item);
+                              handleViewAnalysis(item);
+                            }}
+                            disabled={loadingActionId === item.id}
+                            className="px-2.5 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-lg text-[11px] font-semibold transition-colors flex items-center gap-1 cursor-pointer disabled:opacity-50"
+                            title="Load analysis into interactive dashboard"
+                          >
+                            <Eye className="w-3 h-3" />
+                            <span>View</span>
+                          </button>
+
+                          {/* Quick PDF Dossier */}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadPDF(item)}
+                            disabled={loadingActionId === item.id}
+                            className="p-1.5 bg-purple-50 hover:bg-purple-100 text-purple-700 rounded-lg border border-purple-200 transition-colors cursor-pointer disabled:opacity-50"
+                            title="Download official PDF report"
+                          >
+                            <FileText className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Quick Excel Download */}
+                          <button
+                            type="button"
+                            onClick={() => handleDownloadExcel(item)}
+                            disabled={loadingActionId === item.id}
+                            className="p-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 rounded-lg border border-emerald-200 transition-colors cursor-pointer disabled:opacity-50"
+                            title="Download original spreadsheet"
+                          >
+                            <Download className="w-3.5 h-3.5" />
+                          </button>
+
+                          {/* Delete Item */}
+                          <button
+                            type="button"
+                            onClick={() => promptDeleteRecord(item)}
+                            disabled={loadingActionId === item.id}
+                            className="p-1.5 bg-rose-50 hover:bg-rose-100 text-rose-700 rounded-lg border border-rose-200 transition-colors cursor-pointer disabled:opacity-50"
+                            title="Delete this analysis record"
+                          >
+                            <Trash2 className="w-3.5 h-3.5" />
+                          </button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

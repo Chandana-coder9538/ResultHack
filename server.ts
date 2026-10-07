@@ -2415,11 +2415,19 @@ async function startServer() {
       }
 
       // Final strict filter: Ensure ONLY this college and department's data is returned
-      const filteredList = list.filter((r: any) => {
-        if (r.collegeId && r.collegeId !== collegeId) return false;
-        if (r.departmentId && r.departmentId !== departmentId) return false;
-        return true;
-      });
+      const filteredList = list
+        .filter((r: any) => {
+          const itemCollegeId = r.collegeId || r.college_id;
+          const itemDeptId = r.departmentId || r.department_id;
+          return itemCollegeId === collegeId && itemDeptId === departmentId;
+        })
+        .map((r: any) => ({
+          ...r,
+          collegeId,
+          departmentId,
+          collegeName: deptUser?.collegeName || r.collegeName,
+          departmentName: deptUser?.departmentName || r.departmentName || r.department,
+        }));
 
       res.json(filteredList);
     } catch (err: any) {
@@ -2814,8 +2822,24 @@ async function startServer() {
         } catch {}
       }
 
+      if (!collegeId || !departmentId) {
+        return res.status(403).json({
+          error: 'Analysis data must be stored specifically for an authenticated department of a college.',
+        });
+      }
+
       // Ensure semester details strictly carries authenticated college and concerned department name
-      if (userSemesterDetails) {
+      if (!userSemesterDetails) {
+        userSemesterDetails = {
+          semester: '4th Sem',
+          semType: 'Even Semester',
+          examination: 'June / July 2025',
+          academicYear: '2025-26',
+          scheme: '2022',
+          department: deptUser?.departmentName || 'Academic Department',
+          college: deptUser?.collegeName || 'Engineering College',
+        };
+      } else {
         if (deptUser?.departmentName) {
           userSemesterDetails.department = deptUser.departmentName;
           userSemesterDetails.branch = deptUser.departmentName;
@@ -2919,6 +2943,11 @@ async function startServer() {
         fileName,
         userSemesterDetails
       );
+
+      (analysisPayload as any).collegeId = collegeId;
+      (analysisPayload as any).departmentId = departmentId;
+      (analysisPayload as any).collegeName = deptUser?.collegeName || userSemesterDetails?.college;
+      (analysisPayload as any).departmentName = deptUser?.departmentName || userSemesterDetails?.department;
 
       const now = new Date().toISOString();
       const record: StoredSessionRecord = {
@@ -3045,9 +3074,16 @@ async function startServer() {
         newSemesterDetails
       );
 
+      (updatedPayload as any).collegeId = deptUser?.collegeId;
+      (updatedPayload as any).departmentId = deptUser?.departmentId;
+      (updatedPayload as any).collegeName = deptUser?.collegeName;
+      (updatedPayload as any).departmentName = deptUser?.departmentName;
+
       const now = new Date().toISOString();
       const updatedRecord: StoredSessionRecord = {
         ...session,
+        collegeId: deptUser?.collegeId || session.collegeId,
+        departmentId: deptUser?.departmentId || session.departmentId,
         config: {
           gradingBands: newGradingBands,
           subjectsConfig: newSubjectsConfig,

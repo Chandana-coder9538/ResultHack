@@ -141,6 +141,8 @@ export const UploadWizardModal: React.FC<UploadWizardModalProps> = ({
           scheme: scheme || '',
           fileName: stagedFile?.name || '',
         });
+        if (college?.id) queryParams.set('collegeId', college.id);
+        if (department?.id) queryParams.set('departmentId', department.id);
 
         const res = await fetch(`/api/check-input-details?${queryParams.toString()}`, {
           headers: token ? { Authorization: `Bearer ${token}` } : {},
@@ -726,7 +728,7 @@ export const UploadWizardModal: React.FC<UploadWizardModalProps> = ({
                       </span>
                     </div>
                     <h4 className="text-sm font-bold text-slate-900 mt-1">
-                      Semester {existingMatch.semesterDetails?.semester || semesterNumber} ({existingMatch.semesterDetails?.academicYear || academicYear} • {existingMatch.semesterDetails?.examination || examination}) is already analyzed
+                      Semester {existingMatch.semesterDetails?.semester || semesterNumber} ({existingMatch.semesterDetails?.academicYear || academicYear} • {existingMatch.semesterDetails?.examination || examination}) is already analyzed in {department?.name || 'this department'}{college?.name ? ` (${college.name})` : ''}
                     </h4>
                     <p className="text-xs text-slate-600 mt-0.5">
                       Spreadsheet: <span className="font-semibold text-slate-800">{existingMatch.fileName}</span> • {existingMatch.totalStudents} students • {existingMatch.overallPassPercentage?.toFixed(1)}% pass rate • Scheme {existingMatch.semesterDetails?.scheme || scheme}
