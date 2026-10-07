@@ -486,6 +486,32 @@ export async function supabaseUpdateCollegeFailedLogin(
   }
 }
 
+export async function supabaseUpdateCollegePassword(id: string, passwordHash: string): Promise<boolean> {
+  if (!(await isSupabaseReady())) return false;
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  try {
+    const { error } = await sb
+      .from('colleges')
+      .update({
+        password_hash: passwordHash,
+        failed_attempts: 0,
+        lockout_until: null,
+      })
+      .eq('id', id);
+
+    if (error) {
+      handleSupabaseNotice('updateCollegePassword', error);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    handleSupabaseNotice('updateCollegePassword', err);
+    return false;
+  }
+}
+
 export async function supabaseDeleteCollege(id: string) {
   if (!(await isSupabaseReady())) return false;
   const sb = getSupabase();
@@ -673,6 +699,32 @@ export async function supabaseUpdateDepartmentFailedLogin(
       .eq('id', id);
   } catch (err: any) {
     handleSupabaseNotice('updateDepartmentFailedLogin', err);
+  }
+}
+
+export async function supabaseUpdateDepartmentPassword(id: string, passwordHash: string): Promise<boolean> {
+  if (!(await isSupabaseReady())) return false;
+  const sb = getSupabase();
+  if (!sb) return false;
+
+  try {
+    const { error } = await sb
+      .from('departments')
+      .update({
+        password_hash: passwordHash,
+        failed_attempts: 0,
+        lockout_until: null,
+      })
+      .eq('id', id);
+
+    if (error) {
+      handleSupabaseNotice('updateDepartmentPassword', error);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    handleSupabaseNotice('updateDepartmentPassword', err);
+    return false;
   }
 }
 

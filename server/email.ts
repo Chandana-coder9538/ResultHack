@@ -124,6 +124,18 @@ export async function saveSmtpConfig(config: SmtpConfig): Promise<void> {
 }
 
 /**
+ * Reset / clear custom SMTP settings from database back to simulated mode
+ */
+export async function resetSmtpConfig(): Promise<void> {
+  await setAppSetting('smtp_host', '');
+  await setAppSetting('smtp_port', '');
+  await setAppSetting('smtp_user', '');
+  await setAppSetting('smtp_pass', '');
+  await setAppSetting('smtp_from', '');
+  await setAppSetting('smtp_secure', '');
+}
+
+/**
  * Create a nodemailer transporter instance with robust provider settings
  */
 function createTransporter(config: SmtpConfig) {

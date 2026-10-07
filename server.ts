@@ -35,6 +35,7 @@ import {
   getCollegeById,
   getCollegeByEmail,
   getCollegeByName,
+  cacheCollegeToLocal,
   createCollege,
   deleteCollege,
   updateCollegePassword,
@@ -45,6 +46,7 @@ import {
   getDepartmentByEmail,
   getDepartmentByName,
   getDepartmentByCode,
+  cacheDepartmentToLocal,
   createDepartment,
   deleteDepartment,
   updateDepartmentPassword,
@@ -92,6 +94,7 @@ import {
   isSmtpConfigured,
   getActiveSmtpConfig,
   saveSmtpConfig,
+  resetSmtpConfig,
   verifySmtpConnection,
   SmtpConfig,
 } from './server/email.js';
@@ -356,6 +359,34 @@ async function startServer() {
     } catch (err: any) {
       console.error('Failed to save SMTP config:', err);
       res.status(500).json({ error: `Failed to save SMTP settings: ${err.message}` });
+    }
+  });
+
+  // Reset / Disconnect live SMTP settings back to simulated dev mode
+  app.post('/api/smtp/reset', async (req, res) => {
+    try {
+      await resetSmtpConfig();
+      res.json({
+        success: true,
+        message: 'Live SMTP settings have been successfully reset. Mail dispatcher returned to default simulated mode.',
+        configured: false,
+      });
+    } catch (err: any) {
+      console.error('Failed to reset SMTP config:', err);
+      res.status(500).json({ error: `Failed to reset SMTP: ${err.message}` });
+    }
+  });
+
+  app.delete('/api/smtp/config', async (req, res) => {
+    try {
+      await resetSmtpConfig();
+      res.json({
+        success: true,
+        message: 'Live SMTP settings deleted. Switched back to simulated mode.',
+        configured: false,
+      });
+    } catch (err: any) {
+      res.status(500).json({ error: `Failed to remove SMTP config: ${err.message}` });
     }
   });
 
@@ -1352,12 +1383,18 @@ async function startServer() {
         return res.status(400).json({ error: 'College official email address is required.' });
       }
 
-      const college = await getCollegeByEmail(cleanEmail);
+      let college = await getCollegeByEmail(cleanEmail);
+      if (!college && isSupabaseConfigured() && (await isSupabaseReady())) {
+        const sbCol = await supabaseGetCollegeByEmail(cleanEmail);
+        if (sbCol) {
+          await cacheCollegeToLocal(sbCol);
+          college = await getCollegeByEmail(cleanEmail);
+        }
+      }
+
       if (!college) {
-        // Return friendly message without disclosing user enumeration
-        return res.json({
-          success: true,
-          message: `If an account exists for ${cleanEmail}, a password reset code has been sent.`,
+        return res.status(404).json({
+          error: `No college account was found for "${cleanEmail}". Please verify the official email address or select your college.`,
         });
       }
 
@@ -2112,11 +2149,19 @@ async function startServer() {
         return res.status(400).json({ error: 'Department email address is required.' });
       }
 
-      const dept = await getDepartmentByEmail(cleanEmail);
+      let dept = await getDepartmentByEmail(cleanEmail);
+      if (!dept && isSupabaseConfigured() && (await isSupabaseReady())) {
+        const { supabaseGetDepartmentByEmail } = await import('./server/supabase.js');
+        const sbDept = await supabaseGetDepartmentByEmail(cleanEmail);
+        if (sbDept) {
+          await cacheDepartmentToLocal(sbDept);
+          dept = await getDepartmentByEmail(cleanEmail);
+        }
+      }
+
       if (!dept) {
-        return res.json({
-          success: true,
-          message: `If a department account exists for ${cleanEmail}, a password reset code has been sent.`,
+        return res.status(404).json({
+          error: `No department account was found for "${cleanEmail}". Please check your email or contact the college administrator.`,
         });
       }
 

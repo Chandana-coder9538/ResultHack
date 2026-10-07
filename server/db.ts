@@ -473,75 +473,181 @@ export async function getCollegeById(id: string): Promise<CollegeRecord | null> 
   const db = await getDatabase();
   const stmt = db.prepare('SELECT * FROM colleges WHERE id = ? LIMIT 1');
   stmt.bind([id]);
-  if (!stmt.step()) {
+  if (stmt.step()) {
+    const row = stmt.getAsObject() as any;
     stmt.free();
-    return null;
+    return {
+      id: row.id,
+      name: row.name,
+      universityName: row.university_name,
+      collegeLogoUrl: row.college_logo_url || DEFAULT_COLLEGE_LOGO_SVG,
+      universityLogoUrl: row.university_logo_url || DEFAULT_UNIVERSITY_LOGO_SVG,
+      email: row.email,
+      passwordHash: row.password_hash,
+      emailVerified: Boolean(row.email_verified),
+      createdAt: row.created_at,
+      failedLoginAttempts: Number(row.failed_login_attempts) || 0,
+      lockoutUntil: row.lockout_until || null,
+    };
   }
-  const row = stmt.getAsObject() as any;
   stmt.free();
-  return {
-    id: row.id,
-    name: row.name,
-    universityName: row.university_name,
-    collegeLogoUrl: row.college_logo_url || DEFAULT_COLLEGE_LOGO_SVG,
-    universityLogoUrl: row.university_logo_url || DEFAULT_UNIVERSITY_LOGO_SVG,
-    email: row.email,
-    passwordHash: row.password_hash,
-    emailVerified: Boolean(row.email_verified),
-    createdAt: row.created_at,
-    failedLoginAttempts: Number(row.failed_login_attempts) || 0,
-    lockoutUntil: row.lockout_until || null,
-  };
+
+  // Fallback to Supabase cloud database
+  try {
+    const { supabaseGetCollegeById } = await import('./supabase.js');
+    const sbCollege = await supabaseGetCollegeById(id);
+    if (sbCollege) {
+      await cacheCollegeToLocal(sbCollege);
+      return {
+        id: sbCollege.id,
+        name: sbCollege.name,
+        universityName: sbCollege.universityName,
+        collegeLogoUrl: sbCollege.collegeLogoUrl || DEFAULT_COLLEGE_LOGO_SVG,
+        universityLogoUrl: sbCollege.universityLogoUrl || DEFAULT_UNIVERSITY_LOGO_SVG,
+        email: sbCollege.email,
+        passwordHash: sbCollege.passwordHash,
+        emailVerified: Boolean(sbCollege.emailVerified),
+        createdAt: sbCollege.createdAt,
+        failedLoginAttempts: sbCollege.failedLoginAttempts || 0,
+        lockoutUntil: sbCollege.lockoutUntil || null,
+      };
+    }
+  } catch (err) {
+    console.warn('Error fetching college by id from Supabase:', err);
+  }
+
+  return null;
+}
+
+export async function cacheCollegeToLocal(sbCollege: any): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO colleges (
+        id, name, university_name, college_logo_url, university_logo_url,
+        email, password_hash, email_verified, created_at, failed_login_attempts, lockout_until
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run([
+      sbCollege.id,
+      sbCollege.name,
+      sbCollege.universityName,
+      sbCollege.collegeLogoUrl || DEFAULT_COLLEGE_LOGO_SVG,
+      sbCollege.universityLogoUrl || DEFAULT_UNIVERSITY_LOGO_SVG,
+      sbCollege.email.toLowerCase(),
+      sbCollege.passwordHash,
+      sbCollege.emailVerified ? 1 : 0,
+      sbCollege.createdAt || new Date().toISOString(),
+      sbCollege.failedLoginAttempts || 0,
+      sbCollege.lockoutUntil || null,
+    ]);
+    stmt.free();
+    persistDatabase();
+  } catch (err) {
+    console.warn('Failed to cache college to local SQLite:', err);
+  }
 }
 
 export async function getCollegeByEmail(email: string): Promise<CollegeRecord | null> {
+  const cleanEmail = email.trim().toLowerCase();
   const db = await getDatabase();
   const stmt = db.prepare('SELECT * FROM colleges WHERE LOWER(email) = LOWER(?) LIMIT 1');
-  stmt.bind([email.trim()]);
-  if (!stmt.step()) {
+  stmt.bind([cleanEmail]);
+  if (stmt.step()) {
+    const row = stmt.getAsObject() as any;
     stmt.free();
-    return null;
+    return {
+      id: row.id,
+      name: row.name,
+      universityName: row.university_name,
+      collegeLogoUrl: row.college_logo_url || DEFAULT_COLLEGE_LOGO_SVG,
+      universityLogoUrl: row.university_logo_url || DEFAULT_UNIVERSITY_LOGO_SVG,
+      email: row.email,
+      passwordHash: row.password_hash,
+      emailVerified: Boolean(row.email_verified),
+      createdAt: row.created_at,
+      failedLoginAttempts: Number(row.failed_login_attempts) || 0,
+      lockoutUntil: row.lockout_until || null,
+    };
   }
-  const row = stmt.getAsObject() as any;
   stmt.free();
-  return {
-    id: row.id,
-    name: row.name,
-    universityName: row.university_name,
-    collegeLogoUrl: row.college_logo_url || DEFAULT_COLLEGE_LOGO_SVG,
-    universityLogoUrl: row.university_logo_url || DEFAULT_UNIVERSITY_LOGO_SVG,
-    email: row.email,
-    passwordHash: row.password_hash,
-    emailVerified: Boolean(row.email_verified),
-    createdAt: row.created_at,
-    failedLoginAttempts: Number(row.failed_login_attempts) || 0,
-    lockoutUntil: row.lockout_until || null,
-  };
+
+  // Fallback to Supabase cloud database
+  try {
+    const { supabaseGetCollegeByEmail } = await import('./supabase.js');
+    const sbCollege = await supabaseGetCollegeByEmail(cleanEmail);
+    if (sbCollege) {
+      await cacheCollegeToLocal(sbCollege);
+      return {
+        id: sbCollege.id,
+        name: sbCollege.name,
+        universityName: sbCollege.universityName,
+        collegeLogoUrl: sbCollege.collegeLogoUrl || DEFAULT_COLLEGE_LOGO_SVG,
+        universityLogoUrl: sbCollege.universityLogoUrl || DEFAULT_UNIVERSITY_LOGO_SVG,
+        email: sbCollege.email,
+        passwordHash: sbCollege.passwordHash,
+        emailVerified: Boolean(sbCollege.emailVerified),
+        createdAt: sbCollege.createdAt,
+        failedLoginAttempts: sbCollege.failedLoginAttempts || 0,
+        lockoutUntil: sbCollege.lockoutUntil || null,
+      };
+    }
+  } catch (err) {
+    console.warn('Error fetching college by email from Supabase:', err);
+  }
+
+  return null;
 }
 
 export async function getCollegeByName(name: string): Promise<CollegeRecord | null> {
+  const cleanName = name.trim();
   const db = await getDatabase();
   const stmt = db.prepare('SELECT * FROM colleges WHERE LOWER(name) = LOWER(?) LIMIT 1');
-  stmt.bind([name.trim()]);
-  if (!stmt.step()) {
+  stmt.bind([cleanName]);
+  if (stmt.step()) {
+    const row = stmt.getAsObject() as any;
     stmt.free();
-    return null;
+    return {
+      id: row.id,
+      name: row.name,
+      universityName: row.university_name,
+      collegeLogoUrl: row.college_logo_url || DEFAULT_COLLEGE_LOGO_SVG,
+      universityLogoUrl: row.university_logo_url || DEFAULT_UNIVERSITY_LOGO_SVG,
+      email: row.email,
+      passwordHash: row.password_hash,
+      emailVerified: Boolean(row.email_verified),
+      createdAt: row.created_at,
+      failedLoginAttempts: Number(row.failed_login_attempts) || 0,
+      lockoutUntil: row.lockout_until || null,
+    };
   }
-  const row = stmt.getAsObject() as any;
   stmt.free();
-  return {
-    id: row.id,
-    name: row.name,
-    universityName: row.university_name,
-    collegeLogoUrl: row.college_logo_url || DEFAULT_COLLEGE_LOGO_SVG,
-    universityLogoUrl: row.university_logo_url || DEFAULT_UNIVERSITY_LOGO_SVG,
-    email: row.email,
-    passwordHash: row.password_hash,
-    emailVerified: Boolean(row.email_verified),
-    createdAt: row.created_at,
-    failedLoginAttempts: Number(row.failed_login_attempts) || 0,
-    lockoutUntil: row.lockout_until || null,
-  };
+
+  // Fallback to Supabase cloud database
+  try {
+    const { supabaseGetCollegeByName } = await import('./supabase.js');
+    const sbCollege = await supabaseGetCollegeByName(cleanName);
+    if (sbCollege) {
+      await cacheCollegeToLocal(sbCollege);
+      return {
+        id: sbCollege.id,
+        name: sbCollege.name,
+        universityName: sbCollege.universityName,
+        collegeLogoUrl: sbCollege.collegeLogoUrl || DEFAULT_COLLEGE_LOGO_SVG,
+        universityLogoUrl: sbCollege.universityLogoUrl || DEFAULT_UNIVERSITY_LOGO_SVG,
+        email: sbCollege.email,
+        passwordHash: sbCollege.passwordHash,
+        emailVerified: Boolean(sbCollege.emailVerified),
+        createdAt: sbCollege.createdAt,
+        failedLoginAttempts: sbCollege.failedLoginAttempts || 0,
+        lockoutUntil: sbCollege.lockoutUntil || null,
+      };
+    }
+  } catch (err) {
+    console.warn('Error fetching college by name from Supabase:', err);
+  }
+
+  return null;
 }
 
 export async function createCollege(data: {
@@ -617,6 +723,10 @@ export async function updateCollegePassword(id: string, passwordHash: string): P
   stmt.run([passwordHash, id]);
   stmt.free();
   persistDatabase();
+  try {
+    const { supabaseUpdateCollegePassword } = await import('./supabase.js');
+    await supabaseUpdateCollegePassword(id, passwordHash);
+  } catch {}
   return true;
 }
 
@@ -672,48 +782,125 @@ export async function getDepartmentById(id: string): Promise<DepartmentRecord | 
   const db = await getDatabase();
   const stmt = db.prepare('SELECT * FROM departments WHERE id = ? LIMIT 1');
   stmt.bind([id]);
-  if (!stmt.step()) {
+  if (stmt.step()) {
+    const row = stmt.getAsObject() as any;
     stmt.free();
-    return null;
+    return {
+      id: row.id,
+      collegeId: row.college_id,
+      name: row.name,
+      code: row.code || '',
+      email: row.email,
+      passwordHash: row.password_hash,
+      emailVerified: Boolean(row.email_verified),
+      createdAt: row.created_at,
+      failedLoginAttempts: Number(row.failed_login_attempts) || 0,
+      lockoutUntil: row.lockout_until || null,
+    };
   }
-  const row = stmt.getAsObject() as any;
   stmt.free();
-  return {
-    id: row.id,
-    collegeId: row.college_id,
-    name: row.name,
-    code: row.code || '',
-    email: row.email,
-    passwordHash: row.password_hash,
-    emailVerified: Boolean(row.email_verified),
-    createdAt: row.created_at,
-    failedLoginAttempts: Number(row.failed_login_attempts) || 0,
-    lockoutUntil: row.lockout_until || null,
-  };
+
+  // Fallback to Supabase cloud database
+  try {
+    const { supabaseGetDepartmentById } = await import('./supabase.js');
+    const sbDept = await supabaseGetDepartmentById(id);
+    if (sbDept) {
+      await cacheDepartmentToLocal(sbDept);
+      return {
+        id: sbDept.id,
+        collegeId: sbDept.collegeId,
+        name: sbDept.name,
+        code: sbDept.code || '',
+        email: sbDept.email,
+        passwordHash: sbDept.passwordHash,
+        emailVerified: Boolean(sbDept.emailVerified),
+        createdAt: sbDept.createdAt,
+        failedLoginAttempts: sbDept.failedLoginAttempts || 0,
+        lockoutUntil: sbDept.lockoutUntil || null,
+      };
+    }
+  } catch (err) {
+    console.warn('Error fetching department by id from Supabase:', err);
+  }
+
+  return null;
+}
+
+export async function cacheDepartmentToLocal(sbDept: any): Promise<void> {
+  try {
+    const db = await getDatabase();
+    const stmt = db.prepare(`
+      INSERT OR REPLACE INTO departments (
+        id, college_id, name, code, email, password_hash,
+        email_verified, created_at, failed_login_attempts, lockout_until
+      ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    `);
+    stmt.run([
+      sbDept.id,
+      sbDept.collegeId,
+      sbDept.name,
+      sbDept.code || '',
+      sbDept.email.toLowerCase(),
+      sbDept.passwordHash,
+      sbDept.emailVerified ? 1 : 0,
+      sbDept.createdAt || new Date().toISOString(),
+      sbDept.failedLoginAttempts || 0,
+      sbDept.lockoutUntil || null,
+    ]);
+    stmt.free();
+    persistDatabase();
+  } catch (err) {
+    console.warn('Failed to cache department to local SQLite:', err);
+  }
 }
 
 export async function getDepartmentByEmail(email: string): Promise<DepartmentRecord | null> {
+  const cleanEmail = email.trim().toLowerCase();
   const db = await getDatabase();
   const stmt = db.prepare('SELECT * FROM departments WHERE LOWER(email) = LOWER(?) LIMIT 1');
-  stmt.bind([email.trim()]);
-  if (!stmt.step()) {
+  stmt.bind([cleanEmail]);
+  if (stmt.step()) {
+    const row = stmt.getAsObject() as any;
     stmt.free();
-    return null;
+    return {
+      id: row.id,
+      collegeId: row.college_id,
+      name: row.name,
+      code: row.code || '',
+      email: row.email,
+      passwordHash: row.password_hash,
+      emailVerified: Boolean(row.email_verified),
+      createdAt: row.created_at,
+      failedLoginAttempts: Number(row.failed_login_attempts) || 0,
+      lockoutUntil: row.lockout_until || null,
+    };
   }
-  const row = stmt.getAsObject() as any;
   stmt.free();
-  return {
-    id: row.id,
-    collegeId: row.college_id,
-    name: row.name,
-    code: row.code || '',
-    email: row.email,
-    passwordHash: row.password_hash,
-    emailVerified: Boolean(row.email_verified),
-    createdAt: row.created_at,
-    failedLoginAttempts: Number(row.failed_login_attempts) || 0,
-    lockoutUntil: row.lockout_until || null,
-  };
+
+  // Fallback to Supabase cloud database
+  try {
+    const { supabaseGetDepartmentByEmail } = await import('./supabase.js');
+    const sbDept = await supabaseGetDepartmentByEmail(cleanEmail);
+    if (sbDept) {
+      await cacheDepartmentToLocal(sbDept);
+      return {
+        id: sbDept.id,
+        collegeId: sbDept.collegeId,
+        name: sbDept.name,
+        code: sbDept.code || '',
+        email: sbDept.email,
+        passwordHash: sbDept.passwordHash,
+        emailVerified: Boolean(sbDept.emailVerified),
+        createdAt: sbDept.createdAt,
+        failedLoginAttempts: sbDept.failedLoginAttempts || 0,
+        lockoutUntil: sbDept.lockoutUntil || null,
+      };
+    }
+  } catch (err) {
+    console.warn('Error fetching department by email from Supabase:', err);
+  }
+
+  return null;
 }
 
 export async function getDepartmentByName(collegeId: string, name: string): Promise<DepartmentRecord | null> {
@@ -926,6 +1113,10 @@ export async function updateDepartmentPassword(id: string, passwordHash: string)
   stmt.run([passwordHash, id]);
   stmt.free();
   persistDatabase();
+  try {
+    const { supabaseUpdateDepartmentPassword } = await import('./supabase.js');
+    await supabaseUpdateDepartmentPassword(id, passwordHash);
+  } catch {}
   return true;
 }
 
